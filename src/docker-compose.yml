@@ -1,0 +1,63 @@
+# ===========================================================================
+# Linkwarden for TerraMaster TOS 7 (multi-container Docker application)
+# ===========================================================================
+# App image : moechz/linkwarden:v2.17.0 (Docker Hub mirror of the upstream
+#             ghcr.io/linkwarden/linkwarden image, pushed by the maintainer)
+# Database  : postgres:16-alpine (internal only)
+#
+# Only the app publishes a host port, and NEXTAUTH_SECRET is generated on first
+# start by the wrapper and stored on the persistent storage volume.
+
+services:
+  linkwardendocker:
+    image: moechz/linkwarden:v2.17.0
+    container_name: linkwardendocker
+    restart: unless-stopped
+    user: "1000:1000"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        @@ENTRYPOINT_SH@@
+    depends_on:
+      linkwardendocker-db:
+        condition: service_healthy
+    ports:
+      - "8148:3000"
+    environment:
+      TZ: "Asia/Shanghai"
+      DATABASE_URL: "postgresql://linkwarden@linkwardendocker-db:5432/linkwarden"
+      NEXTAUTH_URL: "http://localhost:8148"
+    volumes:
+      - /Volume1/DockerAppData/linkwardendocker/storage:/data/storage
+    healthcheck:
+      test: ["CMD", "node", "-e", "require(\"http\").get(\"http://127.0.0.1:3000/\",r=>process.exit(r.statusCode<500?0:1)).on(\"error\",()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  linkwardendocker-db:
+    image: postgres:16-alpine
+    container_name: linkwardendocker-db
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      TZ: "Asia/Shanghai"
+      POSTGRES_USER: "linkwarden"
+      POSTGRES_DB: "linkwarden"
+      POSTGRES_HOST_AUTH_METHOD: "trust"
+      PGDATA: "/var/lib/postgresql/data/pgdata"
+    volumes:
+      - /Volume1/DockerAppData/linkwardendocker/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U linkwarden -d linkwarden"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+# TOS App Center web metadata (must be the last block of the file):
+x-app-meta:
+  web:
+    port: 8148
+    protocol: http
